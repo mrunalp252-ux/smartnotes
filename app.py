@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 
+from urllib.parse import parse_qs, urlencode
+
 # Load local environment variables if available
 load_dotenv()
 
@@ -20,6 +22,26 @@ app = Flask(
     template_folder=templates_dir
 )
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'smartnotes-secret-key-prod-2026')
+
+class VercelRouteMiddleware:
+    """WSGI middleware ensuring correct PATH_INFO when Vercel rewrites requests to serverless entrypoints"""
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        qs = environ.get('QUERY_STRING', '')
+        if '__route__' in qs:
+            params = parse_qs(qs, keep_blank_values=True)
+            if '__route__' in params:
+                route = params.pop('__route__')[0]
+                if not route.startswith('/'):
+                    route = '/' + route
+                environ['PATH_INFO'] = route
+                environ['QUERY_STRING'] = urlencode(params, doseq=True)
+        return self.wsgi_app(environ, start_response)
+
+# Apply route middleware to Flask WSGI application
+app.wsgi_app = VercelRouteMiddleware(app.wsgi_app)
 
 # Production Database Strategy: Persistent PostgreSQL via DATABASE_URL
 db_url = os.environ.get('DATABASE_URL')

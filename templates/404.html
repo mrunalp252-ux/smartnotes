@@ -8,7 +8,7 @@
         <div class="error-badge">404</div>
         <h1 class="error-title">Page or Note Not Found</h1>
         <p class="error-description">
-            The note or page you are trying to view doesn't exist or may have been deleted. (Path: {{ request.path }} | PATH_INFO: {{ request.environ.get('PATH_INFO') }} | QS: {{ request.environ.get('QUERY_STRING') }})
+            The note or page you are trying to view doesn't exist or may have been deleted.
         </p>
         <div class="error-actions">
             <a href="{{ url_for('notes_dashboard') }}" class="btn btn-primary" id="btn-404-home">
