@@ -1,26 +1,47 @@
 import os
+import sys
 from datetime import datetime
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 
-# Load environment variables
+# Load local environment variables if available
 load_dotenv()
 
-app = Flask(__name__)
+# Initialize Flask application with explicit template and static directories
+basedir = os.path.abspath(os.path.dirname(__file__))
+static_dir = os.path.join(basedir, 'static')
+templates_dir = os.path.join(basedir, 'templates')
+
+app = Flask(
+    __name__,
+    static_folder=static_dir,
+    static_url_path='/static',
+    template_folder=templates_dir
+)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'smartnotes-secret-key-prod-2026')
 
-# Database connection logic
+# Production Database Strategy: Persistent PostgreSQL via DATABASE_URL
 db_url = os.environ.get('DATABASE_URL')
+
 if db_url:
-    # Handle older Heroku / standard postgres:// syntax for SQLAlchemy
+    # Normalize postgres:// syntax for SQLAlchemy compatibility
     if db_url.startswith('postgres://'):
         db_url = db_url.replace('postgres://', 'postgresql://', 1)
+    
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+    }
 else:
-    # Safe local SQLite fallback when no remote DATABASE_URL is configured
-    basedir = os.path.abspath(os.path.dirname(__file__))
-    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(basedir, 'smartnotes.db')}"
+    # Fallback storage:
+    # On Vercel serverless functions, the code directory is read-only.
+    # We use writable /tmp for serverless runtime, or local directory for local development.
+    if os.environ.get('VERCEL'):
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////tmp/smartnotes.db'
+    else:
+        app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(basedir, 'smartnotes.db')}"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -44,22 +65,67 @@ class Note(db.Model):
     def __repr__(self):
         return f"<Note {self.id}: {self.title}>"
 
-# Create tables upon app startup
+# Idempotent database table initialization helper
+_tables_initialized = False
+
+def ensure_tables_exist():
+    global _tables_initialized
+    if not _tables_initialized:
+        try:
+            db.create_all()
+            _tables_initialized = True
+        except Exception as e:
+            app.logger.warning(f"Database table verification notice: {e}")
+
+# Ensure tables are ready on startup and on first incoming request
 with app.app_context():
-    try:
-        db.create_all()
-    except Exception as e:
-        print(f"Database initialization notice: {e}")
+    ensure_tables_exist()
+
+@app.before_request
+def before_request_hook():
+    # Make sure tables exist before handling database requests
+    if not request.path.startswith('/static'):
+        ensure_tables_exist()
 
 # Context processor for templates
 @app.context_processor
 def inject_global_data():
     return {
         'all_categories': CATEGORIES,
-        'current_year': datetime.utcnow().year
+        'current_year': datetime.utcnow().year,
+        'has_persistent_db': bool(os.environ.get('DATABASE_URL')),
+        'is_vercel': bool(os.environ.get('VERCEL'))
     }
 
-# ----------------- ROUTES ----------------- #
+# ----------------- STATIC ASSETS ROUTE ----------------- #
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve static CSS, JS, and asset files reliably across all environments"""
+    return send_from_directory(app.static_folder, filename)
+
+# ----------------- HEALTH & DIAGNOSTIC ROUTE ----------------- #
+
+@app.route('/api/health')
+def health_check():
+    """Diagnostic endpoint to verify serverless status, database connectivity, and configuration"""
+    result = {
+        'status': 'healthy',
+        'is_vercel': bool(os.environ.get('VERCEL')),
+        'has_database_url': bool(os.environ.get('DATABASE_URL')),
+        'database_backend': 'PostgreSQL (Persistent)' if os.environ.get('DATABASE_URL') else 'SQLite'
+    }
+    try:
+        count = Note.query.count()
+        result['database_connected'] = True
+        result['note_count'] = count
+    except Exception as e:
+        result['status'] = 'database_notice'
+        result['database_connected'] = False
+        result['error'] = str(e)
+    return jsonify(result)
+
+# ----------------- APPLICATION ROUTES ----------------- #
 
 @app.route('/')
 def home():
@@ -93,7 +159,6 @@ def notes_dashboard():
     # Overall stats for the dashboard header
     total_notes_count = Note.query.count()
     pinned_notes_count = Note.query.filter_by(is_pinned=True).count()
-    # Distinct categories currently in use
     active_categories_count = db.session.query(db.func.count(db.distinct(Note.category))).scalar() or 0
 
     return render_template(
@@ -271,7 +336,6 @@ def seed_sample_notes():
 
     try:
         for item in sample_data:
-            # Check if a note with this title already exists to avoid duplicate spamming
             existing = Note.query.filter_by(title=item['title']).first()
             if not existing:
                 note = Note(
@@ -302,7 +366,6 @@ def internal_error(error):
     db.session.rollback()
     return render_template('500.html'), 500
 
-# Standalone execution
+# Standalone local execution
 if __name__ == '__main__':
-    # When running locally
     app.run(host='127.0.0.1', port=5000, debug=True)
