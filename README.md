@@ -187,7 +187,7 @@ git add .
 git commit -m "Initial commit: SmartNotes Flask application"
 
 # Add your GitHub remote repository
-git remote add origin https://github.com/<your-username>/smartnotes.git
+git remote add origin https://github.com/mrunalp252-ux/smartnotes.git
 
 # Set main branch and push
 git branch -M main
