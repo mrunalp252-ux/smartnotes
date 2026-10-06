@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Note | SmartNotes{% endblock %}
+
+{% block content %}
+<div class="form-page-container">
+    <div class="form-page-header">
+        <a href="{{ url_for('notes_dashboard') }}" class="back-link" id="create-back-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Notes</span>
+        </a>
+        <h1 class="page-title">Create New Note</h1>
+        <p class="page-subtitle">Jot down your lecture points, code snippets, project thoughts, or daily ideas.</p>
+    </div>
+
+    <div class="form-card">
+        <form action="{{ url_for('create_note') }}" method="POST" id="create-note-form" novalidate>
+            <!-- Title Field -->
+            <div class="form-group">
+                <label for="title" class="form-label">
+                    Note Title <span class="required-star">*</span>
+                </label>
+                <input 
+                    type="text" 
+                    id="title" 
+                    name="title" 
+                    class="form-control" 
+                    placeholder="e.g. Graph Algorithms & Dijkstra's Practice" 
+                    value="{{ title|default('') }}" 
+                    required 
+                    autofocus
+                >
+                <span class="form-hint">A concise, descriptive summary of this note</span>
+            </div>
+
+            <!-- Category Field -->
+            <div class="form-group">
+                <label for="category" class="form-label">
+                    Category <span class="required-star">*</span>
+                </label>
+                <div class="select-wrapper">
+                    <select id="category" name="category" class="form-control form-select" required>
+                        {% for cat in all_categories %}
+                            <option value="{{ cat }}" {% if category == cat %}selected{% endif %}>
+                                {{ cat }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <span class="form-hint">Assign to organize in your dashboard filter</span>
+            </div>
+
+            <!-- Content Field -->
+            <div class="form-group">
+                <label for="content" class="form-label">
+                    Note Content <span class="required-star">*</span>
+                </label>
+                <textarea 
+                    id="content" 
+                    name="content" 
+                    class="form-control form-textarea" 
+                    rows="8" 
+                    placeholder="Write detailed notes, bullet points, checklists, or code snippets here..." 
+                    required
+                >{{ content|default('') }}</textarea>
+                <div class="textarea-footer">
+                    <span class="form-hint">Supports multi-line text</span>
+                    <span class="char-count" id="char-counter">0 characters</span>
+                </div>
+            </div>
+
+            <!-- Pin Note Checkbox -->
+            <div class="form-group-checkbox">
+                <label class="checkbox-container">
+                    <input 
+                        type="checkbox" 
+                        name="is_pinned" 
+                        id="is_pinned" 
+                        value="1" 
+                        {% if is_pinned %}checked{% endif %}
+                    >
+                    <span class="checkmark"></span>
+                    <div class="checkbox-label-group">
+                        <span class="checkbox-title">Pin this note</span>
+                        <span class="checkbox-desc">Pinned notes stay pinned at the top of your dashboard for quick access.</span>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="form-actions">
+                <a href="{{ url_for('notes_dashboard') }}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary" id="btn-save-note">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span>Save Note</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block title %}404 - Note Not Found | SmartNotes{% endblock %}
+
+{% block content %}
+<div class="error-page-container">
+    <div class="error-card">
+        <div class="error-badge">404</div>
+        <h1 class="error-title">Page or Note Not Found</h1>
+        <p class="error-description">
+            The note or page you are trying to view doesn't exist or may have been deleted.
+        </p>
+        <div class="error-actions">
+            <a href="{{ url_for('notes_dashboard') }}" class="btn btn-primary" id="btn-404-home">
+                Back to Dashboard
+            </a>
+            <a href="{{ url_for('create_note') }}" class="btn btn-secondary">
+                Create New Note
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

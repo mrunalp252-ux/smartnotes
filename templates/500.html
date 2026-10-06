@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block title %}500 - Server Error | SmartNotes{% endblock %}
+
+{% block content %}
+<div class="error-page-container">
+    <div class="error-card">
+        <div class="error-badge error-badge-500">500</div>
+        <h1 class="error-title">Unexpected Server Error</h1>
+        <p class="error-description">
+            Something unexpected occurred while processing your request. Please try refreshing or return to the dashboard.
+        </p>
+        <div class="error-actions">
+            <a href="{{ url_for('notes_dashboard') }}" class="btn btn-primary">
+                Return to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

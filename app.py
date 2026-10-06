@@ -1,0 +1,308 @@
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask_sqlalchemy import SQLAlchemy
+
+# Load environment variables
+load_dotenv()
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'smartnotes-secret-key-prod-2026')
+
+# Database connection logic
+db_url = os.environ.get('DATABASE_URL')
+if db_url:
+    # Handle older Heroku / standard postgres:// syntax for SQLAlchemy
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+else:
+    # Safe local SQLite fallback when no remote DATABASE_URL is configured
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(basedir, 'smartnotes.db')}"
+
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+
+# Supported Categories
+CATEGORIES = ['Personal', 'College', 'Programming', 'Projects', 'Ideas', 'Other']
+
+# Note Model
+class Note(db.Model):
+    __tablename__ = 'notes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(50), nullable=False, default='Other')
+    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<Note {self.id}: {self.title}>"
+
+# Create tables upon app startup
+with app.app_context():
+    try:
+        db.create_all()
+    except Exception as e:
+        print(f"Database initialization notice: {e}")
+
+# Context processor for templates
+@app.context_processor
+def inject_global_data():
+    return {
+        'all_categories': CATEGORIES,
+        'current_year': datetime.utcnow().year
+    }
+
+# ----------------- ROUTES ----------------- #
+
+@app.route('/')
+def home():
+    """Redirect root path to notes dashboard"""
+    return redirect(url_for('notes_dashboard'))
+
+@app.route('/notes')
+def notes_dashboard():
+    """Main dashboard displaying notes, statistics, search, and filtering"""
+    search_query = request.args.get('q', '').strip()
+    selected_category = request.args.get('category', '').strip()
+
+    query = Note.query
+
+    # Apply search filter across title, content, and category
+    if search_query:
+        search_filter = f"%{search_query}%"
+        query = query.filter(
+            (Note.title.ilike(search_filter)) |
+            (Note.content.ilike(search_filter)) |
+            (Note.category.ilike(search_filter))
+        )
+
+    # Apply category filter
+    if selected_category and selected_category in CATEGORIES:
+        query = query.filter(Note.category == selected_category)
+
+    # Order pinned notes first, then latest updated
+    notes = query.order_by(Note.is_pinned.desc(), Note.updated_at.desc()).all()
+
+    # Overall stats for the dashboard header
+    total_notes_count = Note.query.count()
+    pinned_notes_count = Note.query.filter_by(is_pinned=True).count()
+    # Distinct categories currently in use
+    active_categories_count = db.session.query(db.func.count(db.distinct(Note.category))).scalar() or 0
+
+    return render_template(
+        'index.html',
+        notes=notes,
+        total_count=total_notes_count,
+        pinned_count=pinned_notes_count,
+        category_count=active_categories_count,
+        search_query=search_query,
+        selected_category=selected_category
+    )
+
+@app.route('/notes/new', methods=['GET', 'POST'])
+def create_note():
+    """Create a new note with validation"""
+    if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        content = request.form.get('content', '').strip()
+        category = request.form.get('category', 'Other').strip()
+        is_pinned = bool(request.form.get('is_pinned'))
+
+        if category not in CATEGORIES:
+            category = 'Other'
+
+        if not title:
+            flash('Note title is required.', 'error')
+            return render_template('create_note.html', title=title, content=content, category=category, is_pinned=is_pinned), 400
+
+        if not content:
+            flash('Note content is required.', 'error')
+            return render_template('create_note.html', title=title, content=content, category=category, is_pinned=is_pinned), 400
+
+        try:
+            new_note = Note(
+                title=title,
+                content=content,
+                category=category,
+                is_pinned=is_pinned,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.session.add(new_note)
+            db.session.commit()
+            flash('Note created successfully!', 'success')
+            return redirect(url_for('notes_dashboard'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error saving note: {str(e)}', 'error')
+            return render_template('create_note.html', title=title, content=content, category=category, is_pinned=is_pinned), 500
+
+    return render_template('create_note.html', title='', content='', category='Personal', is_pinned=False)
+
+@app.route('/notes/<int:note_id>/edit', methods=['GET', 'POST'])
+def edit_note(note_id):
+    """Edit an existing note"""
+    note = db.session.get(Note, note_id)
+    if not note:
+        flash('Note not found or may have been deleted.', 'error')
+        return redirect(url_for('notes_dashboard'))
+
+    if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        content = request.form.get('content', '').strip()
+        category = request.form.get('category', 'Other').strip()
+        is_pinned = bool(request.form.get('is_pinned'))
+
+        if category not in CATEGORIES:
+            category = 'Other'
+
+        if not title:
+            flash('Note title cannot be empty.', 'error')
+            return render_template('edit_note.html', note=note), 400
+
+        if not content:
+            flash('Note content cannot be empty.', 'error')
+            return render_template('edit_note.html', note=note), 400
+
+        try:
+            note.title = title
+            note.content = content
+            note.category = category
+            note.is_pinned = is_pinned
+            note.updated_at = datetime.utcnow()
+            db.session.commit()
+            flash('Note updated successfully!', 'success')
+            return redirect(url_for('notes_dashboard'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating note: {str(e)}', 'error')
+            return render_template('edit_note.html', note=note), 500
+
+    return render_template('edit_note.html', note=note)
+
+@app.route('/notes/<int:note_id>/delete', methods=['POST'])
+def delete_note(note_id):
+    """Delete a note with POST confirmation"""
+    note = db.session.get(Note, note_id)
+    if not note:
+        flash('Note not found or already deleted.', 'error')
+        return redirect(url_for('notes_dashboard'))
+
+    try:
+        db.session.delete(note)
+        db.session.commit()
+        flash('Note deleted successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting note: {str(e)}', 'error')
+
+    return redirect(url_for('notes_dashboard'))
+
+@app.route('/notes/<int:note_id>/toggle-pin', methods=['POST'])
+def toggle_pin(note_id):
+    """Toggle pin status of a note"""
+    note = db.session.get(Note, note_id)
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', '')
+
+    if not note:
+        if is_ajax:
+            return jsonify({'success': False, 'message': 'Note not found'}), 404
+        flash('Note not found.', 'error')
+        return redirect(url_for('notes_dashboard'))
+
+    try:
+        note.is_pinned = not note.is_pinned
+        note.updated_at = datetime.utcnow()
+        db.session.commit()
+
+        if is_ajax:
+            return jsonify({
+                'success': True,
+                'is_pinned': note.is_pinned,
+                'message': 'Note pinned.' if note.is_pinned else 'Note unpinned.'
+            })
+
+        status_str = 'pinned' if note.is_pinned else 'unpinned'
+        flash(f'Note {status_str} successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        if is_ajax:
+            return jsonify({'success': False, 'message': str(e)}), 500
+        flash('Could not update pin status.', 'error')
+
+    return redirect(url_for('notes_dashboard'))
+
+@app.route('/seed-sample-notes', methods=['POST'])
+def seed_sample_notes():
+    """Populate sample notes for college demonstration"""
+    sample_data = [
+        {
+            'title': 'Java DSA',
+            'category': 'Programming',
+            'content': 'Key Data Structures & Algorithms concepts:\n- Arrays & Dynamic Sizing\n- Singly & Doubly Linked Lists\n- Binary Search Trees & AVL balancing\n- Graphs: BFS, DFS, Dijkstra shortest path\n- Dynamic Programming: Knapsack, LCS, Memoization',
+            'is_pinned': True
+        },
+        {
+            'title': 'College Project Ideas',
+            'category': 'Projects',
+            'content': 'Innovative project concepts for the final semester presentation:\n1. SmartNotes - Modern cloud-ready note organizer\n2. AI Campus Assistant - Automated lab & class schedule guidance\n3. Peer Coding Platform - Live markdown & code snippet collaboration\n4. Smart Attendance System - Quick QR / biometric check-in',
+            'is_pinned': True
+        },
+        {
+            'title': 'Python Flask',
+            'category': 'Programming',
+            'content': 'Flask Architecture & Best Practices:\n- Application factories and modular Blueprints\n- Jinja2 templating with reusable layouts\n- SQLAlchemy ORM database models and migrations\n- Production deployment considerations on serverless platforms like Vercel',
+            'is_pinned': False
+        },
+        {
+            'title': 'Exam Preparation',
+            'category': 'College',
+            'content': 'Semester Exam Study Plan:\n- Computer Networks: OSI model, TCP/IP handshake, subnetting\n- Operating Systems: Process scheduling, semaphore deadlocks, paging\n- Database Management: Normalization forms (1NF, 2NF, 3NF, BCNF), indexing\n- Software Engineering: Agile sprints & UML class diagrams',
+            'is_pinned': False
+        }
+    ]
+
+    try:
+        for item in sample_data:
+            # Check if a note with this title already exists to avoid duplicate spamming
+            existing = Note.query.filter_by(title=item['title']).first()
+            if not existing:
+                note = Note(
+                    title=item['title'],
+                    category=item['category'],
+                    content=item['content'],
+                    is_pinned=item['is_pinned'],
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.session.add(note)
+        db.session.commit()
+        flash('Sample notes populated successfully for college demonstration!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Failed to load sample notes: {str(e)}', 'error')
+
+    return redirect(url_for('notes_dashboard'))
+
+# ----------------- ERROR HANDLERS ----------------- #
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    return render_template('500.html'), 500
+
+# Standalone execution
+if __name__ == '__main__':
+    # When running locally
+    app.run(host='127.0.0.1', port=5000, debug=True)

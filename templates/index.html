@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard | SmartNotes{% endblock %}
+
+{% block content %}
+<div class="dashboard-wrapper">
+    <!-- Hero / Stats Counter Section -->
+    <section class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon-wrapper stat-total">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <span class="stat-label">Total Notes</span>
+                <span class="stat-value" id="stat-total-notes">{{ total_count }}</span>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon-wrapper stat-pinned">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="17" x2="12" y2="22"></line>
+                    <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <span class="stat-label">Pinned Notes</span>
+                <span class="stat-value" id="stat-pinned-notes">{{ pinned_count }}</span>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon-wrapper stat-categories">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <span class="stat-label">Active Categories</span>
+                <span class="stat-value" id="stat-categories-count">{{ category_count }}</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Controls Toolbar: Search & Action Bar -->
+    <section class="toolbar-section">
+        <form class="search-form" method="GET" action="{{ url_for('notes_dashboard') }}" id="search-form">
+            <div class="search-input-group">
+                <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input 
+                    type="text" 
+                    name="q" 
+                    id="search-input" 
+                    value="{{ search_query }}" 
+                    placeholder="Search by title, content, or category..." 
+                    autocomplete="off"
+                >
+                {% if search_query %}
+                    <a href="{{ url_for('notes_dashboard', category=selected_category) }}" class="search-clear-btn" title="Clear search">&times;</a>
+                {% endif %}
+            </div>
+            {% if selected_category %}
+                <input type="hidden" name="category" value="{{ selected_category }}">
+            {% endif %}
+            <button type="submit" class="btn btn-secondary btn-search" id="btn-search-submit">Search</button>
+        </form>
+
+        <div class="toolbar-actions">
+            <a href="{{ url_for('create_note') }}" class="btn btn-primary" id="btn-create-toolbar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>+ New Note</span>
+            </a>
+        </div>
+    </section>
+
+    <!-- Categories Navigation Pills -->
+    <section class="categories-filter-bar">
+        <span class="filter-label">Filter:</span>
+        <div class="category-pills">
+            <a href="{{ url_for('notes_dashboard', q=search_query) }}" 
+               class="pill {% if not selected_category %}pill-active{% endif %}"
+               id="filter-all">
+                All
+            </a>
+            {% for cat in all_categories %}
+                <a href="{{ url_for('notes_dashboard', category=cat, q=search_query) }}" 
+                   class="pill category-pill-{{ cat|lower }} {% if selected_category == cat %}pill-active{% endif %}"
+                   id="filter-{{ cat|lower }}">
+                    {{ cat }}
+                </a>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Notes Grid Container -->
+    <section class="notes-section">
+        {% if notes %}
+            <div class="notes-grid" id="notes-grid">
+                {% for note in notes %}
+                    <article class="note-card {% if note.is_pinned %}note-card-pinned{% endif %}" id="note-card-{{ note.id }}" data-id="{{ note.id }}">
+                        <!-- Card Header -->
+                        <div class="note-card-header">
+                            <span class="category-badge category-badge-{{ note.category|lower }}">
+                                {{ note.category }}
+                            </span>
+
+                            <form action="{{ url_for('toggle_pin', note_id=note.id) }}" method="POST" class="pin-form">
+                                <button type="submit" 
+                                        class="btn-pin-toggle {% if note.is_pinned %}is-pinned{% endif %}" 
+                                        title="{{ 'Unpin note' if note.is_pinned else 'Pin note' }}"
+                                        aria-label="{{ 'Unpin note' if note.is_pinned else 'Pin note' }}"
+                                        id="pin-btn-{{ note.id }}">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="{% if note.is_pinned %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2">
+                                        <line x1="12" y1="17" x2="12" y2="22"></line>
+                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                    </svg>
+                                    {% if note.is_pinned %}
+                                        <span class="pinned-tag">Pinned</span>
+                                    {% endif %}
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Card Body -->
+                        <div class="note-card-body">
+                            <h3 class="note-title" id="note-title-{{ note.id }}">{{ note.title }}</h3>
+                            <p class="note-preview" id="note-preview-{{ note.id }}">{{ note.content }}</p>
+                        </div>
+
+                        <!-- Card Footer -->
+                        <div class="note-card-footer">
+                            <div class="note-timestamps">
+                                <span class="time-item" title="Created on {{ note.created_at.strftime('%Y-%m-%d %H:%M') }}">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                    {{ note.created_at.strftime('%b %d, %Y') }}
+                                </span>
+                                {% if note.updated_at != note.created_at %}
+                                    <span class="time-item time-updated" title="Updated on {{ note.updated_at.strftime('%Y-%m-%d %H:%M') }}">
+                                        (edited)
+                                    </span>
+                                {% endif %}
+                            </div>
+
+                            <div class="note-actions">
+                                <a href="{{ url_for('edit_note', note_id=note.id) }}" class="btn-action btn-edit" title="Edit Note" id="edit-btn-{{ note.id }}">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                    </svg>
+                                    <span>Edit</span>
+                                </a>
+
+                                <button type="button" 
+                                        class="btn-action btn-delete" 
+                                        title="Delete Note" 
+                                        onclick="openDeleteModal('{{ note.id }}', '{{ note.title|replace('\'', '\\\'') }}')" 
+                                        id="delete-btn-{{ note.id }}">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                    <span>Delete</span>
+                                </button>
+                            </div>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        {% else %}
+            <!-- Empty State -->
+            <div class="empty-state-card" id="empty-state">
+                <div class="empty-icon-wrapper">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        <line x1="8" y1="11" x2="14" y2="11"></line>
+                    </svg>
+                </div>
+                <h3 class="empty-title">No notes found</h3>
+                <p class="empty-desc">
+                    {% if search_query or selected_category %}
+                        We couldn't find any notes matching your criteria. Try adjusting or clearing your filters.
+                    {% else %}
+                        You haven't captured any notes yet. Start recording your ideas, classes, and tasks right now!
+                    {% endif %}
+                </p>
+                <div class="empty-actions">
+                    {% if search_query or selected_category %}
+                        <a href="{{ url_for('notes_dashboard') }}" class="btn btn-secondary">Clear Filters</a>
+                    {% endif %}
+                    <a href="{{ url_for('create_note') }}" class="btn btn-primary" id="btn-empty-create">+ Create Note</a>
+                    
+                    <form action="{{ url_for('seed_sample_notes') }}" method="POST" style="display:inline;">
+                        <button type="submit" class="btn btn-outline" id="btn-empty-seed">
+                            Load Demo Notes
+                        </button>
+                    </form>
+                </div>
+            </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
