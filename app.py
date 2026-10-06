@@ -359,6 +359,13 @@ def seed_sample_notes():
 
 @app.errorhandler(404)
 def not_found_error(error):
+    if request.headers.get('Accept') == 'application/json' or request.args.get('format') == 'json':
+        return jsonify({
+            'error': 'not_found',
+            'request_path': request.path,
+            'path_info': request.environ.get('PATH_INFO'),
+            'headers': dict(request.headers)
+        }), 404
     return render_template('404.html'), 404
 
 @app.errorhandler(500)
