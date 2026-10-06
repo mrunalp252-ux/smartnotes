@@ -4,6 +4,8 @@
 
 SmartNotes is a modern, lightweight, and responsive Notes Management Web Application designed for students and developers. Built with Python Flask, SQLAlchemy, modern CSS, and Vanilla JavaScript, SmartNotes provides an intuitive interface to capture thoughts, lecture points, code snippets, and project ideas with persistent storage and seamless serverless cloud deployment.
 
+🌐 **Live Demo:** [https://smartnotes-club.vercel.app](https://smartnotes-club.vercel.app) *(Fallback: [https://smartnotes-mrunalp252-ux.vercel.app](https://smartnotes-mrunalp252-ux.vercel.app))*
+
 ---
 
 ## 📌 Features
